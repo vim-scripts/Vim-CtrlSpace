@@ -1,19 +1,29 @@
 " Vim-CtrlSpace - Vim Workspace Controller
 " Maintainer:   Szymon Wrozynski
-" Version:      3.1.9
+" Version:      3.2.2
 "
-" Installation:
-" Place in ~/.vim/plugin/ctrlspace.vim or in case of Pathogen:
-"
-"     cd ~/.vim/bundle
-"     git clone https://github.com/szw/vim-ctrlspace.git
-"
-" License:
-" Copyright (c) 2013 Szymon Wrozynski <szymon@wrozynski.com>
-" Distributed under the same terms as Vim itself.
+" The MIT License (MIT)
+
+" Copyright (c) 2013 Szymon Wrozynski <szymon@wrozynski.com> and Contributors
 " Original BufferList plugin code - copyright (c) 2005 Robert Lillack <rob@lillack.de>
-" Redistribution in any form with or without modification permitted.
-" Licensed under MIT License conditions.
+
+" Permission is hereby granted, free of charge, to any person obtaining a copy
+" of this software and associated documentation files (the "Software"), to deal
+" in the Software without restriction, including without limitation the rights
+" to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+" copies of the Software, and to permit persons to whom the Software is
+" furnished to do so, subject to the following conditions:
+
+" The above copyright notice and this permission notice shall be included in
+" all copies or substantial portions of the Software.
+
+" THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+" IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+" FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+" AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+" LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+" OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+" THE SOFTWARE.
 "
 " Usage:
 " https://github.com/szw/vim-ctrlspace/blob/master/README.md
@@ -84,6 +94,7 @@ call <SID>define_config_variable("unicode_font", 1)
 call <SID>define_config_variable("symbols", <SID>define_symbols())
 call <SID>define_config_variable("ignored_files", '\v(tmp|temp)[\/]') " in addition to 'wildignore' option
 call <SID>define_config_variable("show_key_info", 0)
+call <SID>define_config_variable("search_timing", [50, 500])
 
 command! -nargs=0 -range CtrlSpace :call <SID>ctrlspace_toggle(0)
 command! -nargs=0 -range CtrlSpaceTabLabel :call <SID>new_tab_label()
@@ -112,6 +123,7 @@ let s:preview_mode            = 0
 let s:active_workspace_name   = ""
 let s:active_workspace_digest = ""
 let s:workspace_names         = []
+let s:update_search_results   = 0
 
 function! <SID>init_project_roots()
   let cache_file = g:ctrlspace_cache_dir . "/.cs_cache"
@@ -226,6 +238,7 @@ function! ctrlspace#statusline_key_info_segment(...)
       endif
 
       call add(keys, "q")
+      call add(keys, "Q")
       call add(keys, "a")
       call add(keys, "A")
       call add(keys, "^p")
@@ -264,6 +277,7 @@ function! ctrlspace#statusline_key_info_segment(...)
     call add(keys, "[")
     call add(keys, "]")
     call add(keys, "q")
+    call add(keys, "Q")
     call add(keys, "j")
     call add(keys, "J")
     call add(keys, "k")
@@ -283,6 +297,7 @@ function! ctrlspace#statusline_key_info_segment(...)
     call add(keys, "CR")
     call add(keys, "BS")
     call add(keys, "q")
+    call add(keys, "Q")
 
     if s:workspace_mode == 1
       call add(keys, "a")
@@ -316,6 +331,7 @@ function! ctrlspace#statusline_key_info_segment(...)
     call add(keys, "]")
     call add(keys, "o")
     call add(keys, "q")
+    call add(keys, "Q")
     call add(keys, "j")
     call add(keys, "J")
     call add(keys, "k")
@@ -834,7 +850,6 @@ function! <SID>load_workspace(bang, name)
     silent! exe c
   endfor
 
-
   if a:bang
     echo g:ctrlspace_symbols.cs . " - The workspace '" . a:name . "' has been loaded."
     let s:active_workspace_digest = <SID>create_workspace_digest()
@@ -846,6 +861,27 @@ function! <SID>load_workspace(bang, name)
     call <SID>kill(0, 0)
     call <SID>ctrlspace_toggle(1)
   endif
+endfunction
+
+function! <SID>quit_vim()
+  if !empty(s:active_workspace_name) && (s:active_workspace_digest !=# <SID>create_workspace_digest())
+        \ && !<SID>confirmed("Current workspace not saved. Proceed anyway?")
+    return
+  endif
+
+  " check for modified buffers
+  for b in range(1, bufnr("$"))
+    if getbufvar(b, '&modified')
+      if !<SID>confirmed("Some buffers not saved. Proceed anyway?")
+        return
+      else
+        break
+      endif
+    endif
+  endfor
+
+  call <SID>kill(0, 1)
+  qa!
 endfunction
 
 function! <SID>find_subsequence(bufname, offset)
@@ -1005,15 +1041,15 @@ endfunction
 " toggled the buffer list on/off
 function! <SID>ctrlspace_toggle(internal)
   if !a:internal
-    let s:single_tab_mode         = 1
-    let s:nop_mode                = 0
-    let s:new_search_performed    = 0
-    let s:search_mode             = 0
-    let s:file_mode               = 0
-    let s:workspace_mode            = 0
-    let s:last_browsed_workspace    = 0
-    let s:restored_search_mode    = 0
-    let s:search_letters          = []
+    let s:single_tab_mode                = 1
+    let s:nop_mode                       = 0
+    let s:new_search_performed           = 0
+    let s:search_mode                    = 0
+    let s:file_mode                      = 0
+    let s:workspace_mode                 = 0
+    let s:last_browsed_workspace         = 0
+    let s:restored_search_mode           = 0
+    let s:search_letters                 = []
     let t:ctrlspace_search_history_index = -1
 
     if !exists("t:sort_order")
@@ -1134,6 +1170,17 @@ function! <SID>ctrlspace_toggle(internal)
     endif
   endif
 
+  " adjust search timing
+  if displayedbufs < g:ctrlspace_search_timing[0]
+    let search_timing = g:ctrlspace_search_timing[0]
+  elseif displayedbufs > g:ctrlspace_search_timing[1]
+    let search_timing = g:ctrlspace_search_timing[1]
+  else
+    let search_timing = displayedbufs
+  endif
+
+  silent! exe "set updatetime=" . search_timing
+
   call <SID>display_list(displayedbufs, buflist)
   call <SID>set_status_line()
 
@@ -1222,18 +1269,28 @@ function! <SID>clear_search_mode()
   call <SID>ctrlspace_toggle(1)
 endfunction
 
+function! <SID>update_search_results()
+  if s:update_search_results
+    let s:update_search_results = 0
+    call <SID>kill(0, 0)
+    call <SID>ctrlspace_toggle(1)
+  endif
+endfunction
+
 function! <SID>add_search_letter(letter)
   call add(s:search_letters, a:letter)
   let s:new_search_performed = 1
-  call <SID>kill(0, 0)
-  call <SID>ctrlspace_toggle(1)
+  let s:update_search_results = 1
+  call <SID>set_status_line()
+  redraw!
 endfunction
 
 function! <SID>remove_search_letter()
   call remove(s:search_letters, -1)
   let s:new_search_performed = 1
-  call <SID>kill(0, 0)
-  call <SID>ctrlspace_toggle(1)
+  let s:update_search_results = 1
+  call <SID>set_status_line()
+  redraw!
 endfunction
 
 function! <SID>switch_search_mode(switch)
@@ -1242,9 +1299,10 @@ function! <SID>switch_search_mode(switch)
   endif
 
   let s:search_mode = a:switch
+  let s:update_search_results = 1
 
-  call <SID>kill(0, 0)
-  call <SID>ctrlspace_toggle(1)
+  call <SID>set_status_line()
+  redraw!
 endfunction
 
 function! <SID>unique_list(list)
@@ -1304,6 +1362,14 @@ function! <SID>kill(buflistnr, final)
   endif
 
   let s:killing_now = 1
+
+  if exists("b:old_updatetime")
+    silent! exe "set updatetime=" . b:old_updatetime
+  endif
+
+  if exists("b:old_timeoutlen")
+    silent! exe "set timeoutlen=" . b:old_timeoutlen
+  endif
 
   if a:buflistnr
     silent! exe ':' . a:buflistnr . 'bwipeout'
@@ -1371,6 +1437,8 @@ function! <SID>keypressed(key)
         call <SID>toggle_file_mode()
       elseif a:key ==# "q"
         call <SID>kill(0, 1)
+      elseif a:key ==# "Q"
+        call <SID>quit_vim()
       elseif a:key ==# "C-p"
         call <SID>restore_search_letters("previous")
       elseif a:key ==# "C-n"
@@ -1409,6 +1477,8 @@ function! <SID>keypressed(key)
       call <SID>load_workspace(1, <SID>get_selected_workspace_name())
     elseif a:key ==# "q"
       call <SID>kill(0, 1)
+    elseif a:key ==# "Q"
+      call <SID>quit_vim()
     elseif a:key ==# "a"
       call <SID>load_workspace(0, <SID>get_selected_workspace_name())
     elseif a:key ==# "s"
@@ -1452,6 +1522,8 @@ function! <SID>keypressed(key)
       call <SID>save_workspace(<SID>get_selected_workspace_name())
     elseif a:key ==# "q"
       call <SID>kill(0, 1)
+    elseif a:key ==# "Q"
+      call <SID>quit_vim()
     elseif a:key ==# "s"
       let s:last_browsed_workspace = line(".")
       call <SID>kill(0, 0)
@@ -1528,6 +1600,8 @@ function! <SID>keypressed(key)
       call <SID>refresh_files()
     elseif a:key ==# "q"
       call <SID>kill(0, 1)
+    elseif a:key ==# "Q"
+      call <SID>quit_vim()
     elseif a:key ==# "j"
       call <SID>move("down")
     elseif a:key ==# "k"
@@ -1619,6 +1693,8 @@ function! <SID>keypressed(key)
       call <SID>toggle_order()
     elseif a:key ==# "q"
       call <SID>kill(0, 1)
+    elseif a:key ==# "Q"
+      call <SID>quit_vim()
     elseif a:key ==# "j"
       call <SID>move("down")
     elseif a:key ==# "k"
@@ -1760,9 +1836,14 @@ function! <SID>set_up_buffer()
   if &timeout
     let b:old_timeoutlen = &timeoutlen
     set timeoutlen=10
-    au BufEnter <buffer> set timeoutlen=10
-    au BufLeave <buffer> silent! exe "set timeoutlen=" . b:old_timeoutlen
   endif
+
+  let b:old_updatetime = &updatetime
+
+  augroup CtrlSpaceUpdateSearch
+    au!
+    au CursorHold <buffer> call <SID>update_search_results()
+  augroup END
 
   augroup CtrlSpaceLeave
     au!

@@ -1,12 +1,8 @@
 Vim-CtrlSpace
 =============
 
-Vim Workspace Controller
-
-About
+TL;DR
 -----
-
-### TL;DR
 
 **Vim-CtrlSpace** is a great plugin that helps you to get more power from Vim while working with
 buffers, tabs, windows, and so on. It is meant to organize your Vim screen space and your workspace
@@ -17,8 +13,8 @@ on disk, fuzzy search, tab management, and more).
 Its name follows the convention of naming similar plugins after their default mappings (like
 *Command-T* or *CtrlP*). Obviously, the plugin mapping is by default `Ctrl + Space`. 
 
-If you like (and use) the plugin please don't forget to add a :star:! This will let me know
-how many users it has and then how to proceed with its further development :).
+If you like the plugin please don't forget to add a star (:star:)! This will help me to estimate the
+plugin popularity and that way I will proceed better its further development :).
 
 ### Demo
 
@@ -29,15 +25,18 @@ Here's a small demonstration. Viewing in HD advised!
 The Demo has been recorded with: 
 
 - a console Vim 7.4 (Menslo font)
-- a bit modified [Seoul 256 colorscheme](https://github.com/szw/seoul256.vim)
+- a bit modified [Seoul256 color scheme](https://github.com/szw/seoul256.vim)
 - following Vim-CtrlSpace settings in .vimrc:
 
         hi CtrlSpaceSelected term=reverse ctermfg=187  ctermbg=23  cterm=bold
         hi CtrlSpaceNormal   term=NONE    ctermfg=244  ctermbg=232 cterm=NONE
         hi CtrlSpaceFound    ctermfg=220  ctermbg=NONE cterm=bold
 
-- Music: [Professor Kliq - Curriculum
+- music: [Professor Kliq - Curriculum
   Vitae](http://www.jamendo.com/pl/list/a109465/curriculum-vitae)
+
+About
+-----
 
 ### The Story
 
@@ -83,7 +82,7 @@ And that was the moment when **Vim-CtrlSpace** came to play.
 ### Vim-CtrlSpace Idea
 
 First, I wanted a cool buffer list. Something neat and easy. MinibufExplorer and friends have some
-issues with hidden buffers. Also, I have troubles when I have too many buffers open. The list gets
+issues with unnamed buffers. Also, I have troubles when I have too many buffers open. The list gets
 longer and longer. A tool like CtrlP was helpful to some point (especially when I was looking for
 a buffer), but it doesn't show you all buffers available. 
 
@@ -236,7 +235,7 @@ the following way:
 
 </table>
 
-### Main modes
+### Main Modes
 
 The plugin has many modes available. In a modal editor like Vim this should not fear you ;). I believe
 its modes are very simple to recognize and understand.
@@ -264,6 +263,16 @@ Buffers and workspaces can have additional indicators:
 </tr>
 
 </table>
+
+#### Simplified Key Diagram
+
+This is a simplified diagram of key groups used in **Vim-CtrlSpace** modes.
+
+![Key Groups](https://raw.github.com/szw/vim-ctrlspace/master/cs_keys.png)
+
+_This file is licensed under GNU FDL license. It is derived from
+[Qwerty.svg](http://commons.wikimedia.org/wiki/File:Qwerty.svg) file by [Oona
+Räisänen](http://en.wikipedia.org/wiki/User:Mysid) &copy; 2005._
 
 #### Single Tab Mode
 
@@ -392,6 +401,11 @@ paths. Here's the full available keys listing:
 <tr>
 <td><code>q</code> / <code>Ctrl + Space</code>&#42;</td>
 <td>Closes the list <br/>&#42; - depends on settings</td>
+</tr>
+
+<tr>
+<td><code>Q</code></td>
+<td>Detects unsaved workspaces or buffers and closes Vim (with a prompt if necessary)</td>
 </tr>
 
 <tr>
@@ -565,18 +579,9 @@ This will prevent you from accidental loading root of i.e. your home directory, 
 really time consuming and rather pointless.
 
 For the first time (or after some file/directory changing actions) the file list is populated with
-data. Sometimes, for very large project this could be time consuming (I've noticed a lag for
+data. Sometimes, for a very large project this could be time consuming (I've noticed a lag for
 a project with over 2200 files). After that, the content of the current working directory is cached
 and available immediately. 
-
-###### A search tech notice
-
-<small>
-For a really big project you might notice some lags while typing the search text. Not really
-annoying I think, but you could have a feeling that plugin does not respond immediately. It's
-a known issue but if it disturbs you a lot, post a Github issue on the project page and I will
-focus on that again.
-</small>
 
 ##### Keys Reference
 
@@ -669,6 +674,11 @@ focus on that again.
 <tr>
 <td><code>q</code> / <code>Ctrl + Space</code>&#42;</td>
 <td>Closes the list <br/>&#42; - depends on settings</td>
+</tr>
+
+<tr>
+<td><code>Q</code></td>
+<td>Detects unsaved workspaces or buffers and closes Vim (with a prompt if necessary)</td>
 </tr>
 
 <tr>
@@ -798,6 +808,11 @@ split windows in a tab, they will be recreated as vertical splits while loading.
 <tr>
 <td><code>q</code> / <code>Ctrl + Space</code>&#42;</td>
 <td>Closes the list <br/>&#42; - depends on settings</td>
+</tr>
+
+<tr>
+<td><code>Q</code></td>
+<td>Detects unsaved workspaces or buffers and closes Vim (with a prompt if necessary)</td>
 </tr>
 
 <tr>
@@ -1005,6 +1020,11 @@ and there are no results at all. In other words, the Nop can happen in the enter
 </tr>
 
 <tr>
+<td><code>Q</code></td>
+<td>Detects unsaved workspaces or buffers and closes Vim (with a prompt if necessary)</td>
+</tr>
+
+<tr>
 <td><code>a</code></td>
 <td>Toggles between Single Tab and All Tabs modes</td>
 </tr>
@@ -1160,6 +1180,14 @@ The expression used to ignore some files, during collecting. It is used in addit
 Should the _key info help_ (toggled by `?`) be visible (`1`) by default or not (`0`).
 Default value: `0`.
 
+### `g:ctrlspace_search_timing`
+
+Allows you to adjust search smoothness. Contains an array of two integer values. If the size of
+the list is lower than the first value, that value will be used for search delay. Similarly, if
+the size of the list is greater than the second value, then that value will be used for search
+delay. In all other cases the delay will equal the list size. That way the plugin ensures smooth
+search input behavior. Default value: `[50, 500]`
+
 ### Colors
 
 The plugin allows you to define its colors entirely. By default it comes with pure black and white
@@ -1218,9 +1246,13 @@ for a custom status line integration (i.e. in plugins like
 
 Provides the custom tabline string.
 
-Author and License
-------------------
+Authors and License
+-------------------
 
-Copyright &copy; 2013 Szymon Wrozynski and Contributors. MIT License.
+Copyright &copy; 2013 [Szymon Wrozynski and
+Contributors](https://github.com/szw/vim-ctrlspace/commits/master). Licensed under [MIT
+License](https://github.com/szw/vim-ctrlspace/blob/master/plugin/ctrlspace.vim#L5-L26) conditions.
 **Vim-CtrlSpace** is based on Robert Lillack plugin [VIM
-bufferlist](https://github.com/roblillack/vim-bufferlist) &copy; 2005 Robert Lillack.
+bufferlist](https://github.com/roblillack/vim-bufferlist) &copy; 2005 Robert Lillack. Moreover some
+concepts of and inspiration has been taken from [Vim-Tabber](https://github.com/fweep/vim-tabber) by
+Jim Steward and [Tabline](https://github.com/mkitt/tabline.vim) by Matthew Kitt.
