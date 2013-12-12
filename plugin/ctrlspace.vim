@@ -1,6 +1,6 @@
 " Vim-CtrlSpace - Vim Workspace Controller
 " Maintainer:   Szymon Wrozynski
-" Version:      3.2.2
+" Version:      3.2.4
 "
 " The MIT License (MIT)
 
@@ -87,9 +87,10 @@ call <SID>define_config_variable("max_searches", 100)
 call <SID>define_config_variable("default_sort_order", 2) " 0 - no sort, 1 - chronological, 2 - alphanumeric
 call <SID>define_config_variable("use_ruby_bindings", 1)
 call <SID>define_config_variable("use_tabline", 1)
-call <SID>define_config_variable("workspace_file", [".git/cs_workspaces", ".svn/cs_workspaces", "CVS/cs_workspaces", ".cs_workspaces"])
+call <SID>define_config_variable("workspace_file",
+      \ [".git/cs_workspaces", ".svn/cs_workspaces", ".hg/cs_workspaces", ".bzr/cs_workspaces", "CVS/cs_workspaces", ".cs_workspaces"])
 call <SID>define_config_variable("cache_dir", expand($HOME))
-call <SID>define_config_variable("project_root_markers", [".git", ".hg", ".svn", ".bzr", "_darcs"]) " make empty to disable
+call <SID>define_config_variable("project_root_markers", [".git", ".hg", ".svn", ".bzr", "_darcs", "CVS"]) " make empty to disable
 call <SID>define_config_variable("unicode_font", 1)
 call <SID>define_config_variable("symbols", <SID>define_symbols())
 call <SID>define_config_variable("ignored_files", '\v(tmp|temp)[\/]') " in addition to 'wildignore' option
@@ -98,6 +99,8 @@ call <SID>define_config_variable("search_timing", [50, 500])
 
 command! -nargs=0 -range CtrlSpace :call <SID>ctrlspace_toggle(0)
 command! -nargs=0 -range CtrlSpaceTabLabel :call <SID>new_tab_label()
+command! -nargs=+ -range CtrlSpaceSaveWorkspace :call <SID>save_workspace_externally(<q-args>)
+command! -nargs=+ -range -bang CtrlSpaceLoadWorkspace :call <SID>load_workspace_externally(<bang>0, <q-args>)
 
 if g:ctrlspace_use_tabline
   set tabline=%!ctrlspace#tabline()
@@ -124,6 +127,7 @@ let s:active_workspace_name   = ""
 let s:active_workspace_digest = ""
 let s:workspace_names         = []
 let s:update_search_results   = 0
+let s:project_root            = ""
 
 function! <SID>init_project_roots()
   let cache_file = g:ctrlspace_cache_dir . "/.cs_cache"
@@ -175,8 +179,8 @@ function! <SID>init_key_names()
   let control_letters = join(control_letters_list, " ")
 
   let numbers       = "1 2 3 4 5 6 7 8 9 0"
-  let special_chars = "Space CR BS Tab S-Tab / ? ; : , . < > [ ] { } ( ) ' ` ~ + - _ = ! @ # $ % ^ & * " .
-                    \ "MouseDown MouseUp LeftDrag LeftRelease 2-LeftMouse Down Up Home End Left Right BSlash Bar"
+  let special_chars = "Space CR BS Tab S-Tab / ? ; : , . < > [ ] { } ( ) ' ` ~ + - _ = ! @ # $ % ^ & * C-f C-b C-u C-d " .
+                    \ "MouseDown MouseUp LeftDrag LeftRelease 2-LeftMouse Down Up Home End Left Right BSlash Bar PageUp PageDown"
 
   let special_chars .= has("gui_running") ? " C-Space" : " Nul"
 
@@ -293,6 +297,10 @@ function! ctrlspace#statusline_key_info_segment(...)
     call add(keys, "^p")
     call add(keys, "^n")
     call add(keys, "w")
+    call add(keys, "^f")
+    call add(keys, "^b")
+    call add(keys, "^d")
+    call add(keys, "^u")
   elseif s:workspace_mode
     call add(keys, "CR")
     call add(keys, "BS")
@@ -311,6 +319,10 @@ function! ctrlspace#statusline_key_info_segment(...)
     call add(keys, "k")
     call add(keys, "K")
     call add(keys, "w")
+    call add(keys, "^f")
+    call add(keys, "^b")
+    call add(keys, "^d")
+    call add(keys, "^u")
   else
     call add(keys, "CR")
     call add(keys, "Sp")
@@ -359,6 +371,10 @@ function! ctrlspace#statusline_key_info_segment(...)
     call add(keys, "^n")
     call add(keys, "S")
     call add(keys, "w")
+    call add(keys, "^f")
+    call add(keys, "^b")
+    call add(keys, "^d")
+    call add(keys, "^u")
   endif
 
   return join(keys, separator)
@@ -551,15 +567,25 @@ function! <SID>save_workspace(name)
   endif
 
   call <SID>kill(0, 1)
+  call <SID>save_workspace_externally(name)
+endfunction
+
+function <SID>save_workspace_externally(name)
+  if !<SID>project_root_found()
+    return
+  endif
+
+  let old_cwd = fnamemodify(".", ":p:h")
+  silent! exe "cd " . s:project_root
 
   let filename = <SID>workspace_file()
   let last_tab = tabpagenr("$")
 
-  let lines      = []
+  let lines        = []
   let in_workspace = 0
 
-  let workspace_start_marker = "CS_WORKSPACE_BEGIN: " . name
-  let workspace_end_marker   = "CS_WORKSPACE_END: " . name
+  let workspace_start_marker = "CS_WORKSPACE_BEGIN: " . a:name
+  let workspace_end_marker   = "CS_WORKSPACE_END: " . a:name
 
   if filereadable(filename)
     for old_line in readfile(filename)
@@ -616,11 +642,13 @@ function! <SID>save_workspace(name)
 
   call writefile(lines, filename)
 
-  let s:active_workspace_name   = name
+  let s:active_workspace_name   = a:name
   let s:active_workspace_digest = <SID>create_workspace_digest()
   let s:workspace_names         = []
 
-  echo g:ctrlspace_symbols.cs . " - The workspace '" . name . "' has been saved."
+  silent! exe "cd " . old_cwd
+
+  echo g:ctrlspace_symbols.cs . " - The workspace '" . a:name . "' has been saved."
 endfunction
 
 function! <SID>delete_workspace(name)
@@ -716,7 +744,7 @@ function! <SID>confirmed(msg)
 endfunction
 
 function! <SID>load_workspace(bang, name)
-  if !empty(s:active_workspace_name) && a:bang
+  if !empty(s:active_workspace_name) && !a:bang
     let msg = ""
 
     if a:name == s:active_workspace_name
@@ -732,11 +760,33 @@ function! <SID>load_workspace(bang, name)
     endif
   endif
 
+  call <SID>kill(0, 1)
+
+  call <SID>load_workspace_externally(a:bang, a:name)
+
+  if a:bang
+    call <SID>ctrlspace_toggle(0)
+    let s:workspace_mode = 1
+    call <SID>kill(0, 0)
+    call <SID>ctrlspace_toggle(1)
+  endif
+endfunction
+
+" bang == 0) load
+" bang == 1) append
+function! <SID>load_workspace_externally(bang, name)
+  if !<SID>project_root_found()
+    return
+  endif
+
+  let old_cwd = fnamemodify(".", ":p:h")
+  silent! exe "cd " . s:project_root
+
   let filename = <SID>workspace_file()
 
   if !filereadable(filename)
     echo g:ctrlspace_symbols.cs . " - Workspaces file '" . filename . "' not found."
-    call <SID>kill(0, 1)
+    silent! exe "cd " . old_cwd
     return
   endif
 
@@ -759,22 +809,20 @@ function! <SID>load_workspace(bang, name)
   if empty(lines)
     echo g:ctrlspace_symbols.cs . " - Workspace '" . a:name . "' not found in file '" . filename . "'."
     let s:workspace_names = []
-    call <SID>kill(0, 1)
+    silent! exe "cd " . old_cwd
     return
   endif
 
-  call <SID>kill(0, 1)
-
   let commands = []
 
-  if a:bang
+  if !a:bang
     echo g:ctrlspace_symbols.cs . " - Loading workspace '" . a:name . "'..."
     call add(commands, "tabe")
     call add(commands, "tabo!")
     call add(commands, "call <SID>delete_hidden_noname_buffers(1)")
     call add(commands, "call <SID>delete_foreign_buffers(1)")
 
-    let create_first_tab      = 0
+    let create_first_tab        = 0
     let s:active_workspace_name = a:name
   else
     echo g:ctrlspace_symbols.cs . " - Appending workspace '" . a:name . "'..."
@@ -813,7 +861,7 @@ function! <SID>load_workspace(bang, name)
     if create_first_tab
       call add(commands, "tabe")
     else
-      let create_first_tab = 1 " we want omit only first tab creation if a:bang == 1
+      let create_first_tab = 1 " we want omit only first tab creation if a:bang == 0 (append mode)
     endif
 
     for fname in readable_files
@@ -850,17 +898,15 @@ function! <SID>load_workspace(bang, name)
     silent! exe c
   endfor
 
-  if a:bang
+  if !a:bang
     echo g:ctrlspace_symbols.cs . " - The workspace '" . a:name . "' has been loaded."
     let s:active_workspace_digest = <SID>create_workspace_digest()
   else
     let s:active_workspace_digest = ""
     echo g:ctrlspace_symbols.cs . " - The workspace '" . a:name . "' has been appended."
-    call <SID>ctrlspace_toggle(0)
-    let s:workspace_mode = 1
-    call <SID>kill(0, 0)
-    call <SID>ctrlspace_toggle(1)
   endif
+
+  silent! exe "cd " . old_cwd
 endfunction
 
 function! <SID>quit_vim()
@@ -870,8 +916,8 @@ function! <SID>quit_vim()
   endif
 
   " check for modified buffers
-  for b in range(1, bufnr("$"))
-    if getbufvar(b, '&modified')
+  for t in range(1, tabpagenr("$"))
+    if <SID>tab_contains_modified_buffers(t)
       if !<SID>confirmed("Some buffers not saved. Proceed anyway?")
         return
       else
@@ -1038,6 +1084,17 @@ function! <SID>prepare_buflist_to_display(buflist)
   endfor
 endfunction
 
+function! <SID>project_root_found()
+  if empty(s:project_root)
+    let s:project_root = <SID>find_project_root()
+    if empty(s:project_root)
+      echo g:ctrlspace_symbols.cs . " - Cannot continue with the project root not set."
+      return 0
+    endif
+  endif
+  return 1
+endfunction
+
 " toggled the buffer list on/off
 function! <SID>ctrlspace_toggle(internal)
   if !a:internal
@@ -1051,6 +1108,10 @@ function! <SID>ctrlspace_toggle(internal)
     let s:restored_search_mode           = 0
     let s:search_letters                 = []
     let t:ctrlspace_search_history_index = -1
+
+    if !<SID>project_root_found()
+      return
+    endif
 
     if !exists("t:sort_order")
       let t:sort_order = g:ctrlspace_default_sort_order
@@ -1091,8 +1152,10 @@ function! <SID>ctrlspace_toggle(internal)
     if empty(s:files)
       echo g:ctrlspace_symbols.cs . " - Collecting files..."
 
-      let s:files = []
+      let s:files            = []
       let s:all_files_cached = []
+
+
       let i = 1
 
       for fname in split(globpath('.', '**'), '\n')
@@ -1474,13 +1537,13 @@ function! <SID>keypressed(key)
     endif
   elseif s:workspace_mode == 1
     if a:key ==# "CR"
-      call <SID>load_workspace(1, <SID>get_selected_workspace_name())
+      call <SID>load_workspace(0, <SID>get_selected_workspace_name())
     elseif a:key ==# "q"
       call <SID>kill(0, 1)
     elseif a:key ==# "Q"
       call <SID>quit_vim()
     elseif a:key ==# "a"
-      call <SID>load_workspace(0, <SID>get_selected_workspace_name())
+      call <SID>load_workspace(1, <SID>get_selected_workspace_name())
     elseif a:key ==# "s"
       let s:last_browsed_workspace = line(".")
       call <SID>kill(0, 0)
@@ -1507,7 +1570,7 @@ function! <SID>keypressed(key)
       call <SID>move("mouse")
     elseif a:key ==# "2-LeftMouse"
       call <SID>move("mouse")
-      call <SID>load_workspace(1, <SID>get_selected_workspace_name())
+      call <SID>load_workspace(0, <SID>get_selected_workspace_name())
     elseif a:key ==# "Down"
       call feedkeys("j")
     elseif a:key ==# "Up"
@@ -1516,6 +1579,14 @@ function! <SID>keypressed(key)
       call <SID>move(1)
     elseif (a:key ==# "End") || (a:key ==# "J")
       call <SID>move(line("$"))
+    elseif (a:key ==# "PageDown") || (a:key ==# "C-f")
+      call <SID>move("pgdown")
+    elseif (a:key ==# "PageUp") || (a:key ==# "C-b")
+      call <SID>move("pgup")
+    elseif a:key ==# "C-d"
+      call <SID>move("half_pgdown")
+    elseif a:key ==# "C-u"
+      call <SID>move("half_pgup")
     endif
   elseif s:workspace_mode == 2
     if a:key ==# "CR"
@@ -1559,6 +1630,14 @@ function! <SID>keypressed(key)
       call <SID>move(1)
     elseif (a:key ==# "End") || (a:key ==# "J")
       call <SID>move(line("$"))
+    elseif (a:key ==# "PageDown") || (a:key ==# "C-f")
+      call <SID>move("pgdown")
+    elseif (a:key ==# "PageUp") || (a:key ==# "C-b")
+      call <SID>move("pgup")
+    elseif a:key ==# "C-d"
+      call <SID>move("half_pgdown")
+    elseif a:key ==# "C-u"
+      call <SID>move("half_pgup")
     endif
   elseif s:file_mode
     if a:key ==# "CR"
@@ -1623,6 +1702,14 @@ function! <SID>keypressed(key)
       call <SID>move(1)
     elseif (a:key ==# "End") || (a:key ==# "J")
       call <SID>move(line("$"))
+    elseif (a:key ==# "PageDown") || (a:key ==# "C-f")
+      call <SID>move("pgdown")
+    elseif (a:key ==# "PageUp") || (a:key ==# "C-b")
+      call <SID>move("pgup")
+    elseif a:key ==# "C-d"
+      call <SID>move("half_pgdown")
+    elseif a:key ==# "C-u"
+      call <SID>move("half_pgup")
     elseif a:key ==? "A"
       call <SID>toggle_file_mode()
     elseif a:key ==# "C-p"
@@ -1727,6 +1814,14 @@ function! <SID>keypressed(key)
       call <SID>move(1)
     elseif (a:key ==# "End") || (a:key ==# "J")
       call <SID>move(line("$"))
+    elseif (a:key ==# "PageDown") || (a:key ==# "C-f")
+      call <SID>move("pgdown")
+    elseif (a:key ==# "PageUp") || (a:key ==# "C-b")
+      call <SID>move("pgup")
+    elseif a:key ==# "C-d"
+      call <SID>move("half_pgdown")
+    elseif a:key ==# "C-u"
+      call <SID>move("half_pgup")
     elseif a:key ==# "a"
       call <SID>toggle_single_tab_mode()
     elseif a:key ==# "f" && s:single_tab_mode
@@ -1772,30 +1867,51 @@ function! <SID>keypressed(key)
   endif
 endfunction
 
-function! <SID>toggle_file_mode()
-  if !s:file_mode && !empty(g:ctrlspace_project_root_markers)
-    let marker_found = 0
+function! <SID>find_project_root()
+  let project_root = fnamemodify(".", ":p:h")
 
-    for marker in g:ctrlspace_project_root_markers
-      if filereadable(marker) || isdirectory(marker)
-        let marker_found = 1
+  if !empty(g:ctrlspace_project_root_markers)
+    let root_found = 0
+
+    let candidate = fnamemodify(project_root, ":p:h")
+    let last_candidate = ""
+
+    while candidate != last_candidate
+      for marker in g:ctrlspace_project_root_markers
+        let marker_path = candidate . "/" . marker
+        if filereadable(marker_path) || isdirectory(marker_path)
+          let root_found = 1
+          break
+        endif
+      endfor
+
+      if !root_found
+        let root_found = index(s:project_roots, candidate) != -1
+      endif
+
+      if root_found
+        let project_root = candidate
         break
       endif
-    endfor
 
-    if !marker_found
-      let project_root = fnamemodify(".", ":p")
+      let last_candidate = candidate
+      let candidate = fnamemodify(candidate, ":p:h:h")
+    endwhile
 
-      if index(s:project_roots, project_root) == -1
-        if !<SID>confirmed("Project root not found. Do you really want to display '" . project_root . "'?")
-          return
-        endif
-
+    if !root_found
+      let project_root = <SID>get_input("No project root found. Set the project root: ", project_root, "dir")
+      if !empty(project_root) && isdirectory(project_root)
         call <SID>add_project_root(project_root)
+      else
+        let project_root = ""
       endif
     endif
   endif
 
+  return project_root
+endfunction
+
+function! <SID>toggle_file_mode()
   let s:file_mode = !s:file_mode
 
   call <SID>kill(0, 0)
@@ -1830,6 +1946,8 @@ function! <SID>set_up_buffer()
   setlocal nonumber
   setlocal nocursorcolumn
   setlocal nocursorline
+
+  silent! exe "lcd " . s:project_root
 
   let b:search_patterns = {}
 
@@ -2066,6 +2184,30 @@ function! <SID>move(where)
     call <SID>goto(line(".")+1)
   elseif a:where == "mouse"
     call <SID>goto(newpos)
+  elseif a:where == "pgup"
+    let newpos = line(".") - winheight(0)
+    if newpos < 1
+      let newpos = 1
+    endif
+    call <SID>goto(newpos)
+  elseif a:where == "pgdown"
+    let newpos = line(".") + winheight(0)
+    if newpos > line("$")
+      let newpos = line("$")
+    endif
+    call <SID>goto(newpos)
+  elseif a:where == "half_pgup"
+    let newpos = line(".") - winheight(0) / 2
+    if newpos < 1
+      let newpos = 1
+    endif
+    call <SID>goto(newpos)
+  elseif a:where == "half_pgdown"
+    let newpos = line(".") + winheight(0) / 2
+    if newpos > line("$")
+      let newpos = line("$")
+    endif
+    call <SID>goto(newpos)
   else
     call <SID>goto(a:where)
   endif
@@ -2148,7 +2290,7 @@ endfunction
 
 function! <SID>load_many_files()
   let file_number = <SID>get_selected_buffer()
-  let file = s:files[file_number - 1]
+  let file = fnamemodify(s:files[file_number - 1], ":p")
   let current_line = line(".")
 
   call <SID>kill(0, 0)
@@ -2162,7 +2304,7 @@ endfunction
 
 function! <SID>load_file(...)
   let file_number = <SID>get_selected_buffer()
-  let file = s:files[file_number - 1]
+  let file = fnamemodify(s:files[file_number - 1], ":p")
 
   call <SID>kill(0, 1)
 
@@ -2493,6 +2635,8 @@ function! <SID>explore_directory()
     return
   endif
 
+  let path = fnamemodify(path, ":p")
+
   call <SID>kill(0, 1)
   silent! exe "e " . path
 endfunction!
@@ -2511,7 +2655,7 @@ function! <SID>edit_file()
     return
   endif
 
-  let s:files = []
+  let new_file = fnamemodify(new_file, ":p")
 
   call <SID>kill(0, 1)
   silent! exe "e " . new_file
